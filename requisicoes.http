@@ -1,0 +1,74 @@
+### Requisições para testar a API (extensão "REST Client" do VS Code: clique em "Send Request")
+
+@catalogo = http://localhost:8081
+@pedidos = http://localhost:8082
+
+### ---------- CATÁLOGO ----------
+
+### Listar produtos
+GET {{catalogo}}/api/produtos
+
+### Filtrar por categoria
+GET {{catalogo}}/api/produtos?categoria=Mercearia
+
+### Buscar um produto
+GET {{catalogo}}/api/produtos/1
+
+### Criar produto
+POST {{catalogo}}/api/produtos
+Content-Type: application/json
+
+{
+  "nome": "Macarrão 500g",
+  "descricao": "Espaguete",
+  "categoria": "Mercearia",
+  "preco": 4.99,
+  "estoque": 70
+}
+
+### Atualizar produto
+PUT {{catalogo}}/api/produtos/1
+Content-Type: application/json
+
+{
+  "nome": "Arroz 5kg",
+  "descricao": "Arroz branco tipo 1",
+  "categoria": "Mercearia",
+  "preco": 25.90,
+  "estoque": 50
+}
+
+### Remover produto
+DELETE {{catalogo}}/api/produtos/10
+
+### ---------- PEDIDOS ----------
+
+### Criar pedido (o serviço de pedidos chama o catálogo)
+POST {{pedidos}}/api/pedidos
+Content-Type: application/json
+
+{
+  "cliente": "Maria",
+  "itens": [
+    { "produtoId": 1, "quantidade": 2 },
+    { "produtoId": 4, "quantidade": 6 }
+  ]
+}
+
+### Pedido com estoque insuficiente (espera 422)
+POST {{pedidos}}/api/pedidos
+Content-Type: application/json
+
+{
+  "cliente": "João",
+  "itens": [ { "produtoId": 5, "quantidade": 999 } ]
+}
+
+### Listar pedidos
+GET {{pedidos}}/api/pedidos
+
+### Buscar pedido
+GET {{pedidos}}/api/pedidos/1
+
+### Cancelar pedido (devolve o estoque)
+PATCH {{pedidos}}/api/pedidos/1/cancelar

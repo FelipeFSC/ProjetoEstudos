@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mini Mercado</title>
+  <style>
+    :root {
+      --bg: #f5f6f4; --card: #ffffff; --text: #1f2a24; --muted: #66726b;
+      --primary: #1f7a4d; --primary-text: #ffffff; --border: #dde3de; --danger: #b3261e;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+    header { background: var(--primary); color: var(--primary-text); padding: 14px 16px; }
+    header h1 { margin: 0; font-size: 1.3rem; }
+    main { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; grid-template-columns: 2fr 1fr; }
+    @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+    section { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+    h2 { margin: 0 0 12px; font-size: 1.05rem; }
+    .produtos { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+    .produto { border: 1px solid var(--border); border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 4px; }
+    .produto small { color: var(--muted); }
+    .preco { font-weight: 600; }
+    button { background: var(--primary); color: var(--primary-text); border: 0; border-radius: 6px; padding: 8px 10px; cursor: pointer; font: inherit; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    button.secundario { background: transparent; color: var(--danger); border: 1px solid var(--danger); padding: 4px 8px; }
+    input, select { width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; font: inherit; }
+    ul { list-style: none; padding: 0; margin: 0; }
+    li { padding: 6px 0; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+    .total { font-weight: 700; margin: 10px 0; }
+    .mensagem { padding: 8px; border-radius: 6px; margin-top: 8px; display: none; }
+    .mensagem.erro { display: block; background: #fbe9e7; color: var(--danger); }
+    .mensagem.ok { display: block; background: #e6f4ea; color: var(--primary); }
+    .status { font-size: .8rem; padding: 2px 6px; border-radius: 4px; background: var(--bg); }
+    .pedidos { grid-column: 1 / -1; }
+    .filtros { margin-bottom: 12px; max-width: 240px; }
+  </style>
+</head>
+<body>
+<header><h1>🛒 Mini Mercado</h1></header>
+
+<main>
+  <section>
+    <h2>Produtos</h2>
+    <div class="filtros">
+      <select id="categoria" onchange="carregarProdutos()">
+        <option value="">Todas as categorias</option>
+      </select>
+    </div>
+    <div id="produtos" class="produtos">Carregando...</div>
+  </section>
+
+  <section>
+    <h2>Carrinho</h2>
+    <ul id="carrinho"></ul>
+    <div class="total">Total: <span id="total">R$ 0,00</span></div>
+    <input id="cliente" placeholder="Seu nome">
+    <p><button id="finalizar" onclick="finalizarPedido()">Finalizar pedido</button></p>
+    <div id="mensagem" class="mensagem"></div>
+  </section>
+
+  <section class="pedidos">
+    <h2>Pedidos</h2>
+    <ul id="pedidos"></ul>
+  </section>
+</main>
+
+<script>
+  // Endereços das APIs. Quando existir um API Gateway, os dois podem apontar para ele.
+  const CATALOGO_URL = 'http://localhost:8081';
+  const PEDIDOS_URL = 'http://localhost:8082';
+
+  const carrinho = new Map(); // produtoId -> { produto, quantidade }
+  let categoriasCarregadas = false;
+
+  const reais = v => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+  async function api(url, opcoes = {}) {
+    const resposta = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opcoes });
+    const corpo = resposta.status === 204 ? null : await resposta.json().catch(() => null);
+    if (!resposta.ok) throw new Error(corpo?.message || `Erro ${resposta.status}`);
+    return corpo;
+  }
+
+  function mostrarMensagem(texto, tipo) {
+    const el = document.getElementById('mensagem');
+    el.textContent = texto;
+    el.className = 'mensagem ' + tipo;
+  }
+
+  async function carregarProdutos() {
+    const el = document.getElementById('produtos');
+    const categoria = document.getElementById('categoria').value;
+    try {
+      const produtos = await api(`${CATALOGO_URL}/api/produtos` + (categoria ? `?categoria=${encodeURIComponent(categoria)}` : ''));
+      if (!categoriasCarregadas) preencherCategorias(produtos);
+      el.innerHTML = '';
+      for (const p of produtos) {
+        const card = document.createElement('div');
+        card.className = 'produto';
+        card.innerHTML = `<strong></strong><small></small><span class="preco"></span><small></small>`;
+        const [nome, desc, preco, estoque] = card.children;
+        nome.textContent = p.nome;
+        desc.textContent = p.descricao ?? '';
+        preco.textContent = reais(p.preco);
+        estoque.textContent = `Estoque: ${p.estoque}`;
+        const botao = document.createElement('button');
+        botao.textContent = 'Adicionar';
+        botao.disabled = p.estoque === 0;
+        botao.onclick = () => adicionar(p);
+        card.appendChild(botao);
+        el.appendChild(card);
+      }
+    } catch (e) {
+      el.textContent = 'Não foi possível carregar os produtos. O serviço de catálogo está rodando em ' + CATALOGO_URL + '?';
+    }
+  }
+
+  function preencherCategorias(produtos) {
+    const select = document.getElementById('categoria');
+    [...new Set(produtos.map(p => p.categoria).filter(Boolean))].sort().forEach(c => select.add(new Option(c, c)));
+    categoriasCarregadas = true;
+  }
+
+  function adicionar(produto) {
+    const item = carrinho.get(produto.id) ?? { produto, quantidade: 0 };
+    item.quantidade++;
+    carrinho.set(produto.id, item);
+    renderizarCarrinho();
+  }
+
+  function remover(produtoId) {
+    carrinho.delete(produtoId);
+    renderizarCarrinho();
+  }
+
+  function renderizarCarrinho() {
+    const ul = document.getElementById('carrinho');
+    ul.innerHTML = '';
+    let total = 0;
+    for (const { produto, quantidade } of carrinho.values()) {
+      total += produto.preco * quantidade;
+      const li = document.createElement('li');
+      li.innerHTML = '<span></span>';
+      li.firstChild.textContent = `${quantidade}x ${produto.nome} — ${reais(produto.preco * quantidade)}`;
+      const botao = document.createElement('button');
+      botao.className = 'secundario';
+      botao.textContent = 'remover';
+      botao.onclick = () => remover(produto.id);
+      li.appendChild(botao);
+      ul.appendChild(li);
+    }
+    if (carrinho.size === 0) ul.innerHTML = '<li>Carrinho vazio</li>';
+    document.getElementById('total').textContent = reais(total);
+  }
+
+  async function finalizarPedido() {
+    const cliente = document.getElementById('cliente').value.trim();
+    if (!cliente) return mostrarMensagem('Informe seu nome.', 'erro');
+    if (carrinho.size === 0) return mostrarMensagem('O carrinho está vazio.', 'erro');
+
+    const botao = document.getElementById('finalizar');
+    botao.disabled = true;
+    try {
+      const itens = [...carrinho.values()].map(i => ({ produtoId: i.produto.id, quantidade: i.quantidade }));
+      const pedido = await api(`${PEDIDOS_URL}/api/pedidos`, { method: 'POST', body: JSON.stringify({ cliente, itens }) });
+      carrinho.clear();
+      renderizarCarrinho();
+      mostrarMensagem(`Pedido #${pedido.id} criado! Total ${reais(pedido.total)}`, 'ok');
+      await Promise.all([carregarProdutos(), carregarPedidos()]);
+    } catch (e) {
+      mostrarMensagem(e.message, 'erro');
+    } finally {
+      botao.disabled = false;
+    }
+  }
+
+  async function cancelarPedido(id) {
+    try {
+      await api(`${PEDIDOS_URL}/api/pedidos/${id}/cancelar`, { method: 'PATCH' });
+      await Promise.all([carregarProdutos(), carregarPedidos()]);
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  async function carregarPedidos() {
+    const ul = document.getElementById('pedidos');
+    try {
+      const pedidos = await api(`${PEDIDOS_URL}/api/pedidos`);
+      ul.innerHTML = pedidos.length ? '' : '<li>Nenhum pedido ainda</li>';
+      for (const p of pedidos) {
+        const li = document.createElement('li');
+        const itens = p.itens.map(i => `${i.quantidade}x ${i.nomeProduto}`).join(', ');
+        li.innerHTML = '<span></span><span class="status"></span>';
+        li.children[0].textContent = `#${p.id} — ${p.cliente} — ${reais(p.total)} — ${itens}`;
+        li.children[1].textContent = p.status;
+        if (p.status !== 'CANCELADO') {
+          const botao = document.createElement('button');
+          botao.className = 'secundario';
+          botao.textContent = 'cancelar';
+          botao.onclick = () => cancelarPedido(p.id);
+          li.appendChild(botao);
+        }
+        ul.appendChild(li);
+      }
+    } catch (e) {
+      ul.innerHTML = '<li></li>';
+      ul.firstChild.textContent = 'Não foi possível carregar os pedidos. O serviço de pedidos está rodando em ' + PEDIDOS_URL + '?';
+    }
+  }
+
+  renderizarCarrinho();
+  carregarProdutos();
+  carregarPedidos();
+</script>
+</body>
+</html>
